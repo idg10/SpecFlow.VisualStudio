@@ -27,23 +27,24 @@ namespace TechTalk.SpecFlow.VsIntegration
     {
         internal static DefaultDependencyProvider DefaultDependencyProvider = new DefaultDependencyProvider();
 
-        public static IObjectContainer CreateContainer(SpecFlowPackagePackage package)
+        public static async System.Threading.Tasks.Task<IObjectContainer> CreateContainer(SpecFlowPackagePackage package)
         {
             var container = new ObjectContainer();
 
             container.RegisterInstanceAs(package);
             container.RegisterInstanceAs<IServiceProvider>(package);
+            container.RegisterInstanceAs<IAsyncServiceProvider>(package);
 
-            RegisterDefaults(container);
+            await RegisterDefaults(container);
 
             BiDiContainerProvider.CurrentContainer = container; //TODO: avoid static field
 
             return container;
         }
 
-        private static void RegisterDefaults(IObjectContainer container)
+        private static System.Threading.Tasks.Task RegisterDefaults(IObjectContainer container)
         {
-            DefaultDependencyProvider.RegisterDefaults(container);
+            return DefaultDependencyProvider.RegisterDefaults(container);
         }
     }
 
@@ -51,10 +52,10 @@ namespace TechTalk.SpecFlow.VsIntegration
     {
         static partial void RegisterCommands(IObjectContainer container);
 
-        public virtual void RegisterDefaults(IObjectContainer container)
+        public virtual async System.Threading.Tasks.Task RegisterDefaults(IObjectContainer container)
         {
-            var serviceProvider = container.Resolve<IServiceProvider>();
-            RegisterVsDependencies(container, serviceProvider);
+            var serviceProvider = container.Resolve<IAsyncServiceProvider>();
+            await RegisterVsDependencies(container, serviceProvider);
 
             container.RegisterTypeAs<InstallServices, InstallServices>();
             container.RegisterTypeAs<InstallServicesHelper, InstallServicesHelper>();
@@ -62,11 +63,11 @@ namespace TechTalk.SpecFlow.VsIntegration
             container.RegisterTypeAs<WindowsFileAssociationDetector, IFileAssociationDetector>();
             container.RegisterTypeAs<RegistryStatusAccessor, IStatusAccessor>();
 
-            container.RegisterTypeAs<IntegrationOptionsProvider, IIntegrationOptionsProvider>();
-            container.RegisterInstanceAs<IIdeTracer>(VsxHelper.ResolveMefDependency<IVisualStudioTracer>(serviceProvider));
-            container.RegisterInstanceAs(VsxHelper.ResolveMefDependency<IProjectScopeFactory>(serviceProvider));
+            container.RegisterTypeAs<PackageIntegrationOptionsProvider, IIntegrationOptionsProvider>();
+            container.RegisterInstanceAs<IIdeTracer>(await VsxHelper.ResolveMefDependencyAsync<IVisualStudioTracer>(serviceProvider));
+            container.RegisterInstanceAs(await VsxHelper.ResolveMefDependencyAsync<IProjectScopeFactory>(serviceProvider));
 
-            
+
             container.RegisterTypeAs<StepDefinitionSkeletonProvider, IStepDefinitionSkeletonProvider>();
             container.RegisterTypeAs<DefaultSkeletonTemplateProvider, ISkeletonTemplateProvider>();
             container.RegisterTypeAs<StepTextAnalyzer, IStepTextAnalyzer>();
@@ -79,17 +80,17 @@ namespace TechTalk.SpecFlow.VsIntegration
             RegisterCommands(container);
         }
 
-        protected virtual void RegisterVsDependencies(IObjectContainer container, IServiceProvider serviceProvider)
+        protected virtual async System.Threading.Tasks.Task RegisterVsDependencies(IObjectContainer container, IAsyncServiceProvider serviceProvider)
         {
-            var dte = serviceProvider.GetService(typeof(DTE)) as DTE;
+            var dte = await serviceProvider.GetServiceAsync(typeof(DTE)) as DTE;
             if (dte != null)
             {
                 container.RegisterInstanceAs(dte);
                 container.RegisterInstanceAs((DTE2)dte);
             }
 
-            container.RegisterInstanceAs(VsxHelper.ResolveMefDependency<IOutputWindowService>(serviceProvider));
-            container.RegisterInstanceAs(VsxHelper.ResolveMefDependency<IGherkinLanguageServiceFactory>(serviceProvider));
+            container.RegisterInstanceAs(await VsxHelper.ResolveMefDependencyAsync<IOutputWindowService>(serviceProvider));
+            container.RegisterInstanceAs(await VsxHelper.ResolveMefDependencyAsync<IGherkinLanguageServiceFactory>(serviceProvider));
         }
     }
 

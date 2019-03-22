@@ -38,11 +38,6 @@ namespace TechTalk.SpecFlow.VsIntegration.Options
         {
         }
 
-        public IntegrationOptionsProvider(DTE dte)
-        {
-            this.dte = dte;
-        }
-
         private static T GetGeneralOption<T>(DTE dte, string optionName, T defaultValue = default(T))
         {
             return VsxHelper.GetOption(dte, SPECFLOW_OPTIONS_CATEGORY, SPECFLOW_GENERAL_OPTIONS_PAGE, optionName, defaultValue);

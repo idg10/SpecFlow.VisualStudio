@@ -468,6 +468,12 @@ namespace TechTalk.SpecFlow.VsIntegration.Utils
             return project.Properties.Item("AssemblyName").Value as string;
         }
 
+        public static async System.Threading.Tasks.Task<T> ResolveMefDependencyAsync<T>(Microsoft.VisualStudio.Shell.IAsyncServiceProvider serviceProvider) where T : class
+        {
+            IComponentModel componentModel = (IComponentModel)await serviceProvider.GetServiceAsync(typeof(SComponentModel));
+            return componentModel.GetService<T>();
+        }
+
         public static T ResolveMefDependency<T>(System.IServiceProvider serviceProvider) where T : class
         {
             IComponentModel componentModel = (IComponentModel)serviceProvider.GetService(typeof(SComponentModel));

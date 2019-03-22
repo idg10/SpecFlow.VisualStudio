@@ -9,10 +9,15 @@ using System.Text;
 using BoDi;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Threading;
 using TechTalk.SpecFlow.IdeIntegration.Install;
 using TechTalk.SpecFlow.VsIntegration.Commands;
 using TechTalk.SpecFlow.VsIntegration.Options;
 using TechTalk.SpecFlow.VsIntegration.Utils;
+using System.Threading;
+using System.Threading.Tasks;
+
+using Task = System.Threading.Tasks.Task;
 
 namespace TechTalk.SpecFlow.VsIntegration
 {
@@ -28,7 +33,7 @@ namespace TechTalk.SpecFlow.VsIntegration
     /// </summary>
     // This attribute tells the PkgDef creation utility (CreatePkgDef.exe) that this class is
     // a package.
-    [PackageRegistration(UseManagedResourcesOnly = true)]
+    [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     // This attribute is used to register the information needed to show that this package
     // in the Help/About dialog of Visual Studio.
     [InstalledProductRegistration("#110", "#112", GuidList.ProductId, IconResourceID = 400)]
@@ -36,8 +41,8 @@ namespace TechTalk.SpecFlow.VsIntegration
     [ProvideProfile(typeof(OptionsPageGeneral), IntegrationOptionsProvider.SPECFLOW_OPTIONS_CATEGORY, IntegrationOptionsProvider.SPECFLOW_GENERAL_OPTIONS_PAGE, 121, 123, true, DescriptionResourceID = 121)]
     [Guid(GuidList.guidSpecFlowPkgString)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
-    [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExists_string)]
-    public sealed class SpecFlowPackagePackage : Package
+    [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExists_string, PackageAutoLoadFlags.BackgroundLoad)]
+    public sealed class SpecFlowPackagePackage : AsyncPackage
     {
         public IObjectContainer Container { get; private set; }
 
@@ -105,23 +110,40 @@ namespace TechTalk.SpecFlow.VsIntegration
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
         /// where you can put all the initialization code that relies on services provided by VisualStudio.
         /// </summary>
-        protected override void Initialize()
+        protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
             Trace.WriteLine(string.Format(CultureInfo.CurrentCulture, "Entering Initialize() of: {0}", this.ToString()));
-            base.Initialize();
+            await base.InitializeAsync(cancellationToken, progress);
 
-            Container = VsContainerBuilder.CreateContainer(this);
+            Container = await VsContainerBuilder.CreateContainer(this);
+
+            await this.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            var settings = (OptionsPageGeneral)GetDialogPage(typeof(OptionsPageGeneral));
+            Container.RegisterInstanceAs(settings);
+            await TaskScheduler.Default;
+
 
             var currentIdeIntegration = CurrentIdeIntegration;
             if (currentIdeIntegration != null)
             {
+                await this.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                // This resolution needs to happen on the main thread because one of the
+                // dependencies involved is DTE. That's a COM interface, and as part of
+                // passing that as a ctor argument to the VsBrowserGuidanceNotificationService
+                // that needs it, reflection will want to check that the object it has implements
+                // DTE. That will entail calling QueryInterface under the covers, and since the
+                // DTE object is STA-bound, that in turn means hitting the UI thread. And this
+                // seems to cause deadlock. So better to force ourselves onto the UI thread now.
                 InstallServices installServices = Container.Resolve<InstallServices>();
                 installServices.OnPackageLoad(currentIdeIntegration.Value);
+                await TaskScheduler.Default;
             }
 
-            OleMenuCommandService menuCommandService = GetService(typeof(IMenuCommandService)) as OleMenuCommandService;
+
+            OleMenuCommandService menuCommandService = await GetServiceAsync(typeof(IMenuCommandService)) as OleMenuCommandService;
             if (menuCommandService != null)
             {
+                await this.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 foreach (var menuCommandHandler in Container.Resolve<IDictionary<SpecFlowCmdSet, MenuCommandHandler>>())
                 {
                     menuCommandHandler.Value.RegisterTo(menuCommandService, menuCommandHandler.Key);
